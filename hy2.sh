@@ -7,7 +7,7 @@ check_sys() {
     os_type="debian"
   elif grep -qi "centos\|red hat\|fedora" /etc/issue; then
     os_type="centos"  
-  elif grep -qi "alpine" /etc/issue; then
+  elif grep -qi "alpine" /etc/os-release; then
     os_type="alpine"
   else
     echo "不支持的系统" && exit 1
@@ -24,7 +24,14 @@ install_deps() {
       yum install -y wget curl openssl iptables
       ;;
     alpine)
-      apk add wget curl openssl iptables
+      # 更新包索引
+      apk update
+      # 安装基础依赖
+      apk add wget curl openssl iptables bash coreutils
+      # 确保bash可用
+      if [ ! -e /bin/bash ]; then
+        ln -sf /bin/bash /bin/sh
+      fi
       ;;
   esac
 }
@@ -40,6 +47,14 @@ setup_port_hop() {
     if [ "$start_port" -lt "$end_port" ]; then
       iptables -t nat -A PREROUTING -i eth0 -p udp --dport "$start_port":"$end_port" -j REDIRECT --to-ports "$port"
       echo "端口跳跃已配置: $start_port-$end_port -> $port"
+      
+      # 为Alpine添加iptables持久化
+      if [ "$os_type" = "alpine" ]; then
+        # 安装iptables-persistent
+        apk add iptables-persistent
+        # 保存规则
+        /etc/init.d/iptables save
+      fi
       
       # 创建开机自启服务
       cat > /etc/systemd/system/port-hop.service <<EOF
@@ -79,7 +94,19 @@ install_hy2() {
         x86_64) arch="amd64";;
         aarch64) arch="arm64";;
         armv7l) arch="arm";;
-        *) echo "不支持的架构: $arch" && exit 1;;
+        *) 
+          if [ "$os_type" = "alpine" ]; then
+            # Alpine可能使用不同的架构名称
+            case $(uname -m) in
+              x86_64) arch="amd64";;
+              aarch64) arch="arm64";;
+              armv7*) arch="arm";;
+              *) echo "不支持的Alpine架构: $arch" && exit 1;;
+            esac
+          else
+            echo "不支持的架构: $arch" && exit 1
+          fi
+          ;;
     esac
 
     if ! wget -q "https://github.com/apernet/hysteria/releases/download/$latest_version/hysteria-linux-$arch" -O /usr/local/bin/hysteria; then
