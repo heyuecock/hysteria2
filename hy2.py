@@ -281,7 +281,7 @@ WantedBy=multi-user.target
                     break
                 print("端口范围: 1-65535")
             except ValueError:
-                print("请输入有效的端口号")
+                print("请输入有效的端口号(1-65535)")
                 
         default_password = str(uuid.uuid4())
         passwd = input(f"密码(回车使用随机生成的UUID) [{default_password}]: ") or default_password
