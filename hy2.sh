@@ -159,6 +159,9 @@ EOF
     echo "systemctl status hysteria-server"
     echo "journalctl -u hysteria-server"
   fi
+  
+  # 安装完成后直接退出
+  exit 0
 }
 
 # 生成自签证书
@@ -341,8 +344,6 @@ menu() {
   case $choice in
     1) 
       check_sys && install_deps && install_hy2
-      # 安装完成后重新显示菜单
-      menu
       ;;
     2) 
       systemctl stop hysteria-server 2>/dev/null
