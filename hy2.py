@@ -22,14 +22,46 @@ class Hysteria2:
     def check_root(self):
         return os.geteuid() == 0
         
+    def check_sys(self):
+        if Path("/etc/os-release").exists():
+            with open("/etc/os-release") as f:
+                content = f.read().lower()
+                if "alpine" in content:
+                    return "alpine"
+        
+        if Path("/etc/issue").exists():
+            with open("/etc/issue") as f:
+                content = f.read().lower()
+                if "debian" in content or "ubuntu" in content:
+                    return "debian"
+                elif any(x in content for x in ["centos", "red hat", "fedora"]):
+                    return "centos"
+        
+        return None
+
     def install_deps(self):
-        if Path("/etc/debian_version").exists():
-            subprocess.run("apt update && apt install -y curl openssl iptables", shell=True)
-        elif Path("/etc/redhat-release").exists():
-            subprocess.run("yum install -y curl openssl iptables", shell=True)
-        elif Path("/etc/alpine-release").exists():
-            subprocess.run("apk add curl openssl iptables", shell=True)
-            
+        os_type = self.check_sys()
+        if not os_type:
+            print("不支持的系统")
+            sys.exit(1)
+        
+        try:
+            if os_type == "debian":
+                subprocess.run("apt update && apt install -y wget curl openssl iptables", shell=True, check=True)
+            elif os_type == "centos":
+                subprocess.run("yum install -y wget curl openssl iptables", shell=True, check=True)
+            elif os_type == "alpine":
+                # 更新包索引
+                subprocess.run("apk update", shell=True, check=True)
+                # 安装基础依赖
+                subprocess.run("apk add wget curl openssl iptables bash coreutils", shell=True, check=True)
+                # 确保bash可用
+                if not Path("/bin/bash").exists():
+                    subprocess.run("ln -sf /bin/bash /bin/sh", shell=True, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"安装依赖失败: {e}")
+            sys.exit(1)
+
     def setup_port_hop(self, port):
         enable_hop = input("是否启用端口跳跃(y/n)[n]: ").lower() or "n"
         if enable_hop == "y":
@@ -43,26 +75,22 @@ class Hysteria2:
                 except ValueError:
                     print("请输入有效的端口号")
             
-            # 配置iptables
-            subprocess.run(f"iptables -t nat -A PREROUTING -i eth0 -p udp --dport {start_port}:{end_port} -j REDIRECT --to-ports {port}", shell=True)
-            print(f"端口跳跃已配置: {start_port}-{end_port} -> {port}")
+            try:
+                subprocess.run(f"iptables -t nat -A PREROUTING -i eth0 -p udp --dport {start_port}:{end_port} -j REDIRECT --to-ports {port}", shell=True, check=True)
+                print(f"端口跳跃已配置: {start_port}-{end_port} -> {port}")
+                
+                # 为Alpine添加iptables持久化
+                os_type = self.check_sys()
+                if os_type == "alpine":
+                    subprocess.run("apk add iptables-persistent", shell=True, check=True)
+                    subprocess.run("/etc/init.d/iptables save", shell=True, check=True)
             
-            # 创建开机自启服务
-            service_content = f"""[Unit]
-Description=Port Hopping Service
-After=network.target
-
-[Service]
-Type=oneshot
-ExecStart=/sbin/iptables -t nat -A PREROUTING -i eth0 -p udp --dport {start_port}:{end_port} -j REDIRECT --to-ports {port}
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
-"""
-            Path("/etc/systemd/system/port-hop.service").write_text(service_content)
-            subprocess.run("systemctl enable port-hop", shell=True)
+            except subprocess.CalledProcessError as e:
+                print(f"配置端口跳跃失败: {e}")
+                return False
             
+            return True
+        
     def install(self):
         self.config_dir.mkdir(exist_ok=True)
         
@@ -70,17 +98,9 @@ WantedBy=multi-user.target
         print("正在下载hysteria2...")
         try:
             # 使用官方安装脚本
-            result = subprocess.run(
-                "curl -fsSL https://get.hy2.sh/ | bash",
-                shell=True,
-                executable="/bin/bash"
-            )
-            if result.returncode != 0:
-                raise Exception("Installation failed")
+            if subprocess.run("curl -fsSL https://get.hy2.sh/ | bash", shell=True).returncode != 0:
+                print("官方脚本安装失败,尝试使用备用方式...")
                 
-        except Exception as e:
-            print("官方脚本安装失败,尝试使用备用方式...")
-            try:
                 # 获取最新版本
                 latest_version = subprocess.check_output(
                     "curl -s 'https://api.github.com/repos/apernet/hysteria/releases/latest' | grep -Po '\"tag_name\": \"\\K.*?(?=\")'",
@@ -94,22 +114,32 @@ WantedBy=multi-user.target
                     "aarch64": "arm64",
                     "armv7l": "arm"
                 }
+                
                 if arch not in arch_map:
-                    raise Exception(f"不支持的架构: {arch}")
-                arch = arch_map[arch]
+                    os_type = self.check_sys()
+                    if os_type == "alpine":
+                        # Alpine特殊架构处理
+                        if arch.startswith("armv7"):
+                            arch = "arm"
+                        elif arch == "x86_64":
+                            arch = "amd64"
+                        elif arch == "aarch64":
+                            arch = "arm64"
+                        else:
+                            raise Exception(f"不支持的Alpine架构: {arch}")
+                    else:
+                        raise Exception(f"不支持的架构: {arch}")
+                else:
+                    arch = arch_map[arch]
                 
                 # 下载二进制文件
                 download_url = f"https://github.com/apernet/hysteria/releases/download/{latest_version}/hysteria-linux-{arch}"
                 if subprocess.run(f"wget -q '{download_url}' -O /usr/local/bin/hysteria", shell=True).returncode != 0:
                     raise Exception("Download failed")
                     
-            except Exception as e:
-                print("错误: 下载失败")
-                print("请尝试手动下载:")
-                print("1. 访问 https://github.com/apernet/hysteria/releases/latest")
-                print("2. 下载对应架构的文件并重命名为 hysteria")
-                print("3. 将文件放置到 /usr/local/bin/hysteria")
-                sys.exit(1)
+        except Exception as e:
+            print(f"安装失败: {e}")
+            sys.exit(1)
 
         # 检查二进制文件位置
         binary_paths = ["/usr/local/bin/hysteria", "/usr/bin/hysteria"]
