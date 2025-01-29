@@ -4,7 +4,6 @@ hysteria2一键安装(轻量级超低占用)
 ## 支持系统
 - Debian/Ubuntu 系列
 - CentOS/RHEL/Rocky/Fedora 系列  
-- Alpine Linux 3.15+
 
 ## 功能特点
 - 支持ACME证书申请和自签证书
