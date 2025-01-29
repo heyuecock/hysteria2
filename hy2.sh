@@ -323,11 +323,8 @@ EOF
             server_ip="获取IP失败,请手动替换此处"
         fi
         
-        # 获取实际使用的域名
-        domain=$(grep -oP 'CN=\K[^/]+' /etc/ssl/private/*/www.bing.com.crt 2>/dev/null || echo "www.bing.com")
-        
         echo -e "\n分享链接:"
-        echo "hysteria2://${passwd}@${server_ip}:${port}?insecure=1&sni=${domain}&obfs=none#${node_name}"
+        echo "hysteria2://${passwd}@${server_ip}:${port}?alpn=h3&insecure=1#${node_name}"
         echo  # 添加空行
     fi
 }
