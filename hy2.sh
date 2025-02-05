@@ -376,6 +376,7 @@ get_share_link() {
     
     echo -e "\n分享链接:"
     echo "hysteria2://${passwd}@${server_ip}:${port}?alpn=h3&insecure=1#hysteria2"
+    echo  # 添加空行
   else
     echo "配置文件不存在"
   fi
