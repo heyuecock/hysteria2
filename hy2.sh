@@ -187,7 +187,11 @@ EOF
     echo "journalctl -u hysteria-server"
   fi
   
-  # 安装完成后直接退出
+  # 创建快捷方式
+  echo '#!/bin/bash
+wget -q https://raw.githubusercontent.com/heyuecock/hysteria2/main/hy2.sh -O hy2.sh && chmod 777 hy2.sh && bash hy2.sh' > /usr/local/bin/hy2
+  chmod +x /usr/local/bin/hy2
+  
   exit 0
 }
 
@@ -359,6 +363,24 @@ EOF
     fi
 }
 
+# 添加新函数用于生成分享链接
+get_share_link() {
+  if [ -f "/etc/hysteria/config.yaml" ]; then
+    local port=$(grep "listen:" /etc/hysteria/config.yaml | awk -F':' '{print $3}')
+    local passwd=$(grep "password:" /etc/hysteria/config.yaml | awk '{print $2}')
+    local server_ip=$(curl -s4 ip.sb || curl -s6 ip.sb)
+    
+    if [ -z "$server_ip" ]; then
+      server_ip="获取IP失败,请手动替换此处"
+    fi
+    
+    echo -e "\n分享链接:"
+    echo "hysteria2://${passwd}@${server_ip}:${port}?alpn=h3&insecure=1#hysteria2"
+  else
+    echo "配置文件不存在"
+  fi
+}
+
 # 主菜单
 menu() {
   echo "1. 安装"
@@ -388,7 +410,11 @@ menu() {
       iptables -t nat -F
       echo "卸载完成"
       ;;
-    3) cat /etc/hysteria/config.yaml ;;
+    3) 
+      echo "当前配置:"
+      cat /etc/hysteria/config.yaml
+      get_share_link
+      ;;
     4)
       read -p "请输入新的快捷指令名称[hy2]: " new_name
       new_name=${new_name:-hy2}
