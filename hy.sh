@@ -399,26 +399,6 @@ EOF
     fi
 }
 
-# 在check_service_status函数后添加新函数
-clean_hysteria_process() {
-  # 查找hysteria进程
-  local pids=$(pgrep hysteria)
-  if [ -n "$pids" ]; then
-    echo "正在清理hysteria进程..."
-    for pid in $pids; do
-      kill -9 $pid 2>/dev/null
-    done
-    sleep 1
-  fi
-  
-  # 二次确认是否还有残留进程
-  if pgrep hysteria >/dev/null; then
-    echo "警告: 仍有hysteria进程残留"
-    return 1
-  fi
-  return 0
-}
-
 # 主菜单
 menu() {
   echo "1. 安装"
@@ -432,17 +412,7 @@ menu() {
     1) 
       check_sys && install_deps && install_hy2
       ;;
-    2)
-      read -p "确认要卸载Hysteria2吗?(y/n)[n]: " confirm
-      confirm=${confirm:-n}
-      if [ "$confirm" != "y" ]; then
-        echo "已取消卸载"
-        return
-      fi
-      
-      echo "开始卸载Hysteria2..."
-      
-      # 停止服务
+    2) 
       if [ "$os_type" = "alpine" ]; then
         alpine_service stop hysteria-server
         alpine_service stop port-hop
@@ -454,11 +424,6 @@ menu() {
         systemctl disable hysteria-server 2>/dev/null
         systemctl disable port-hop 2>/dev/null
       fi
-      
-      # 清理进程
-      clean_hysteria_process
-      
-      # 清理文件
       rm -rf /etc/hysteria
       rm -f /usr/local/bin/hy2
       rm -f /usr/local/bin/hysteria
@@ -466,24 +431,13 @@ menu() {
       rm -f /etc/systemd/system/hysteria-server.service
       rm -f /etc/init.d/hysteria-server
       rm -f /etc/init.d/port-hop
-      
-      # 重载服务
       if [ "$os_type" = "alpine" ]; then
         rc-service iptables restart 2>/dev/null
-      else  
+      else
         systemctl daemon-reload
       fi
-      
-      # 清理iptables规则
       iptables -t nat -F
-      
-      # 验证卸载结果
-      if pgrep hysteria >/dev/null || [ -d "/etc/hysteria" ] || [ -f "/usr/local/bin/hysteria" ]; then
-        echo "警告: 卸载可能不完整,请检查是否有残留"
-        exit 1
-      else
-        echo "Hysteria2已完全卸载"
-      fi
+      echo "卸载完成"
       ;;
     3) 
       echo "当前配置:"
